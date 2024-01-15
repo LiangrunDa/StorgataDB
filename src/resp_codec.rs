@@ -1,9 +1,8 @@
+use crate::connection::ConnectionError;
+use async_recursion::async_recursion;
 use std::fmt::Debug;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use async_recursion::async_recursion;
 use tracing::debug;
-use crate::connection::ConnectionError;
-
 
 #[derive(Clone)]
 pub(crate) enum RespValue {
@@ -40,13 +39,15 @@ impl Debug for RespValue {
 pub(crate) struct RespCodec;
 
 impl RespCodec {
-
     pub(crate) fn new() -> Self {
         Self {}
     }
 
     #[async_recursion]
-    pub(crate) async fn decode<T: AsyncBufRead + Unpin + Send>(&mut self, input: &mut T) -> Result<RespValue, ConnectionError> {
+    pub(crate) async fn decode<T: AsyncBufRead + Unpin + Send>(
+        &mut self,
+        input: &mut T,
+    ) -> Result<RespValue, ConnectionError> {
         // Read the first byte to determine the type of the RESP value
         let mut buf = [0u8; 1];
         input.read_exact(&mut buf).await?;
@@ -59,9 +60,7 @@ impl RespCodec {
                 if len < 2 || buf[len - 2] != b'\r' {
                     return Err(ConnectionError::IncompleteData);
                 }
-                RespValue::SimpleString(
-                    String::from_utf8(buf[..len - 2].to_vec())?,
-                )
+                RespValue::SimpleString(String::from_utf8(buf[..len - 2].to_vec())?)
             }
             b'-' => {
                 // Error
@@ -71,9 +70,7 @@ impl RespCodec {
                 if len < 2 || buf[len - 2] != b'\r' {
                     return Err(ConnectionError::IncompleteData);
                 }
-                RespValue::Error(
-                    String::from_utf8(buf[..len - 2].to_vec())?,
-                )
+                RespValue::Error(String::from_utf8(buf[..len - 2].to_vec())?)
             }
             b':' => {
                 // Integer
@@ -83,10 +80,7 @@ impl RespCodec {
                 if len < 2 || buf[len - 2] != b'\r' {
                     return Err(ConnectionError::IncompleteData);
                 }
-                RespValue::Integer(
-                    String::from_utf8(buf[..len - 2].to_vec())?
-                        .parse::<i64>()?
-                )
+                RespValue::Integer(String::from_utf8(buf[..len - 2].to_vec())?.parse::<i64>()?)
             }
             b'$' => {
                 // Bulk String
@@ -117,11 +111,10 @@ impl RespCodec {
                 if len < 2 || buf[len - 2] != b'\r' {
                     return Err(ConnectionError::IncompleteData);
                 }
-                let len = String::from_utf8(buf[..len as usize - 2].to_vec())?;
+                let len = String::from_utf8(buf[..len - 2].to_vec())?;
                 let len = len.parse::<usize>()?;
                 let mut array = Vec::with_capacity(len);
                 for _ in 0..len {
-
                     array.push(self.decode(input).await?);
                 }
                 RespValue::Array(array)
@@ -138,7 +131,11 @@ impl RespCodec {
     }
 
     #[async_recursion]
-    pub(crate) async fn encode<T: AsyncWrite + Unpin + Send>(&mut self, output: &mut T, data: &RespValue) -> Result<(), ConnectionError> {
+    pub(crate) async fn encode<T: AsyncWrite + Unpin + Send>(
+        &mut self,
+        output: &mut T,
+        data: &RespValue,
+    ) -> Result<(), ConnectionError> {
         debug!("Sending {:?}", data);
         match data {
             RespValue::SimpleString(s) => {

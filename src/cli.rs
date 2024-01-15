@@ -1,8 +1,5 @@
 use clap::Parser;
-use std::{
-    path::{Path, PathBuf},
-};
-use crate::logger::LogLevel;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser, Clone, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -12,42 +9,46 @@ pub struct Args {
     /// usage:
     /// ./kv-rs --peer-addr 127.0.0.1:8080 --peer-addr 127.0.0.1:8081
     /// ./kv-rs --peer-addr 127.0.0.1:8080 127.0.0.0.1:8081
-    #[arg(short = 'p', long, num_args = 1.., value_delimiter = ' ')]
+    #[arg(short = 'p', long, env, num_args = 1.., value_delimiter = ' ')]
     peer_addr: Vec<String>,
 
     /// Raft: Ip address of the server.
-    #[arg(short = 'a', long)]
+    #[arg(short = 'a', long, env)]
     self_addr: String,
 
     /// Ip address of the kv server.
-    #[arg(short = 'k', long, default_value = "0.0.0.0:6379")]
+    #[arg(short = 'k', long, env, default_value = "0.0.0.0:6379")]
     kv_addr: String,
 
     /// Relative path to the server's data directory.
-    #[arg(short = 'd', long, default_value = "./data/kv_server/storage")]
+    #[arg(short = 'd', long, env, default_value = "./data/kv_server/storage")]
     directory: PathBuf,
 
     /// Relative path to the server's log file.
-    #[arg(short = 'l', long, default_value = "./data/kv_server/kv_server.log")]
+    #[arg(
+        short = 'l',
+        long,
+        env,
+        default_value = "./data/kv_server/kv_server.log"
+    )]
     log_file: PathBuf,
 
     /// Relative path to the server's raft state file.
-    #[arg(short = 'r', long, default_value = "./data/raft/raft_state")]
+    #[arg(short = 'r', long, env, default_value = "./data/raft/raft_state")]
     raft_state_file: PathBuf,
 
     /// Set the log level.
-    #[arg(long = "ll", value_enum, default_value_t)]
-    log_level: LogLevel,
+    #[arg(long = "ll", long, env, default_value = "info")]
+    log_level: String,
 
     /// Logging filter
-    #[arg(long, default_value = "tokio=error,tarpc=error,raft_lite=info,distributed_kv_db=debug")]
+    #[arg(long, env, default_value = "tokio=error,tarpc=error,raft_lite=trace")]
     rust_log: String,
-
 }
 
 impl Args {
-    pub fn log_level(&self) -> LogLevel {
-        self.log_level
+    pub fn log_level(&self) -> String {
+        self.log_level.clone()
     }
     pub fn log_dir(&self) -> &Path {
         self.log_file.parent().unwrap_or(Path::new("."))

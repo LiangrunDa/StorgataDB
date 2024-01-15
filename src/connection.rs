@@ -1,14 +1,15 @@
-use thiserror::Error;
-use tokio::io::{ReadHalf, WriteHalf, BufReader};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc;
-use bitcask_engine_rs::bitcask::{BitCask, KVStorage};
-use crate::{cmd};
+use crate::cmd;
 use crate::cmd::InnerCmd;
 use crate::resp_codec::{RespCodec, RespValue};
 use crate::sync_layer::SyncRequest;
+use bitcask_engine_rs::bitcask::{BitCask, KVStorage};
+use std::net::SocketAddr;
+use thiserror::Error;
+use tokio::io::{BufReader, ReadHalf, WriteHalf};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration};
-use tracing::{info};
+use tracing::info;
 
 #[derive(Error, Debug)]
 pub(crate) enum ConnectionError {
@@ -32,9 +33,12 @@ pub(crate) struct Connection {
     sync_request_tx: mpsc::Sender<SyncRequest<InnerCmd>>,
 }
 
-// TODO: implement connection logger so that we can log the connection info (e.g. peer address)
 impl Connection {
-    pub(crate) fn new(stream: TcpStream, storage_handle: BitCask, sync_request_tx: mpsc::Sender<SyncRequest<InnerCmd>>) -> Self {
+    pub(crate) fn new(
+        stream: TcpStream,
+        storage_handle: BitCask,
+        sync_request_tx: mpsc::Sender<SyncRequest<InnerCmd>>,
+    ) -> Self {
         let (reader, writer) = tokio::io::split(stream);
         let buf_reader = tokio::io::BufReader::new(reader);
         Self {
@@ -46,7 +50,9 @@ impl Connection {
         }
     }
 
-    pub(crate) async fn handle(&mut self) -> Result<(), ConnectionError>{
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub(crate) async fn handle(&mut self, addr: SocketAddr) -> Result<(), ConnectionError> {
+        info!("Handling connection from {}", addr);
         loop {
             match self.codec.decode(&mut self.reader).await {
                 Ok(res) => {
@@ -57,7 +63,7 @@ impl Connection {
                     match parsed_inner_cmd {
                         Ok(inner_cmd) => {
                             self.handle_valid_cmd(inner_cmd).await?;
-                        },
+                        }
                         Err(_) => {
                             let msg = RespValue::Error(format!("Err unknown command {:?}", res));
                             // encode error must be IO error, so we can safely return here
@@ -88,13 +94,16 @@ impl Connection {
         }
     }
 
-    pub(crate) async fn handle_valid_cmd(&mut self, inner_cmd: InnerCmd) -> Result<(), ConnectionError>{
+    pub(crate) async fn handle_valid_cmd(
+        &mut self,
+        inner_cmd: InnerCmd,
+    ) -> Result<(), ConnectionError> {
         info!("Handling command: {:?}", inner_cmd);
         match inner_cmd {
             InnerCmd::Get(_, key) => {
                 self.handle_read(key).await?;
             }
-            InnerCmd::Put(_, _, _) | InnerCmd::Del(_, _) => {
+            InnerCmd::Put(_, _, _, _) | InnerCmd::Del(_, _) => {
                 self.handle_write(inner_cmd).await?;
             }
         }
@@ -112,19 +121,34 @@ impl Connection {
         Ok(())
     }
 
-
     /// Write the value to the storage and send the response back to the client
     /// We need to synchronize the write operation with peers to guarantee consistency
-    pub(crate) async fn handle_write(&mut self, inner_cmd: InnerCmd) -> Result<(), ConnectionError> {
+    pub(crate) async fn handle_write(
+        &mut self,
+        inner_cmd: InnerCmd,
+    ) -> Result<(), ConnectionError> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let sync_request = SyncRequest::new(inner_cmd, tx);
-        self.sync_request_tx.send(sync_request).await.expect("Could not send sync request");
+        self.sync_request_tx
+            .send(sync_request)
+            .await
+            .expect("Could not send sync request");
         // waiting for the response from the sync layer for 10 seconds
         match timeout(Duration::from_secs(10), rx).await {
-            Ok(Ok(_)) => {
-                info!("Write operation is committed");
-                let msg = RespValue::SimpleString("OK".to_string());
-                self.codec.encode(&mut self.writer, &msg).await?;
+            Ok(Ok(res)) => {
+                match res {
+                    Ok(_) => {
+                        info!("Write operation is committed");
+                        let msg = RespValue::SimpleString("OK".to_string());
+                        self.codec.encode(&mut self.writer, &msg).await?;
+                    }
+                    Err(_) => {
+                        // might be due to NX or XX option
+                        info!("Write operation is aborted");
+                        let msg = RespValue::BulkString(None);
+                        self.codec.encode(&mut self.writer, &msg).await?;
+                    }
+                }
             }
             Ok(Err(_)) => {
                 let msg = RespValue::Error("Request timeout".to_string());
@@ -137,6 +161,4 @@ impl Connection {
         }
         Ok(())
     }
-
 }
-
