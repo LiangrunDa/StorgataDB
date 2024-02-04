@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kv-server
+  labels:
+    app: kv-server
+spec:
+  clusterIP: None
+  selector:
+    app: kv-server
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: kv-service
+spec:
+  selector:
+    app: kv-server
+  ports:
+    - protocol: TCP
+      port: 6379
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kv-server
+spec:
+  selector:
+    matchLabels:
+      app: kv-server
+  serviceName: "kv-server"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: kv-server
+    spec:
+      containers:
+        - name: kv-server
+          image: distributed-kv-db
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SELF_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TOTAL_REPLICAS
+              value: "3"
+            - name: RAFT_PORT
+              value: "6624"
+            - name: LOG_LEVEL
+              value: "info"

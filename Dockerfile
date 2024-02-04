@@ -3,8 +3,7 @@ WORKDIR /app
 COPY . .
 RUN cargo build --release --bin storgata-db
 
-# debian:bullseye-slim
-FROM rust:latest
+FROM debian:bullseye
 RUN apt-get update && apt-get install -y dnsutils
 WORKDIR /app
 COPY --from=builder /app/target/release/storgata-db .
