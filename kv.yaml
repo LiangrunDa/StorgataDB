@@ -44,8 +44,7 @@ spec:
     spec:
       containers:
         - name: kv-server
-          image: storgatadb
-          imagePullPolicy: Never
+          image: liangrunda/storgatadb
           ports:
             - containerPort: 8080
           env:
