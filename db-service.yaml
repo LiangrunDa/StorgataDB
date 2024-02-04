@@ -40,8 +40,7 @@ spec:
     spec:
       containers:
         - name: kv-server
-          image: distributed-kv-db
-          imagePullPolicy: Never
+          image: liangrunda/storgatadb
           ports:
             - containerPort: 8080
           env:
