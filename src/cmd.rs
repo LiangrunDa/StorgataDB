@@ -14,7 +14,6 @@ pub(crate) struct PutOptionSerde {
 }
 
 impl PutOptionSerde {
-
     pub fn nx() -> Option<Self> {
         Some(Self {
             nx: true,
@@ -46,6 +45,7 @@ pub(crate) enum Cmd {
     /// Set key to hold the `string` value. If key already holds a value, it is overwritten, regardless of its type.
     Set(SetCmd),
     Del(DelCmd),
+    Ping,
     Unknown,
 }
 
@@ -64,12 +64,15 @@ pub(crate) struct DelCmd {
     pub(crate) key: RespValue,
 }
 
+pub(crate) struct PingCmd;
+
 impl Debug for Cmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Cmd::Get(cmd) => write!(f, "GET {:?}", cmd.key),
             Cmd::Set(cmd) => write!(f, "SET {:?} {:?}", cmd.key, cmd.value),
             Cmd::Del(cmd) => write!(f, "DEL {:?}", cmd.key),
+            Cmd::Ping => write!(f, "PING"),
             Cmd::Unknown => write!(f, "Unknown"),
         }
     }
@@ -77,8 +80,8 @@ impl Debug for Cmd {
 
 pub(crate) trait ParseCmd {
     fn parse(value: RespValue) -> anyhow::Result<Self>
-    where
-        Self: Sized;
+        where
+            Self: Sized;
 }
 
 impl ParseCmd for GetCmd {
@@ -149,46 +152,46 @@ impl ParseCmd for DelCmd {
     }
 }
 
+impl ParseCmd for PingCmd {
+    fn parse(value: RespValue) -> anyhow::Result<Self> {
+        match value {
+            RespValue::Array(arr) if arr.is_empty() => Ok(Self),
+            _ => Err(anyhow::anyhow!("Invalid PING command")),
+        }
+    }
+}
+
 impl From<RespValue> for Cmd {
     fn from(value: RespValue) -> Self {
-
         match value {
             RespValue::Array(mut arr)
-                if arr.iter().all(|v| matches!(v, RespValue::BulkString(_))) =>
-            {
-                if let RespValue::BulkString(cmd_bytes) = arr.remove(0) {
-                    let cmd = convert_bulk_string_to_string(cmd_bytes);
-                    match cmd.as_str() {
-                        "GET" => {
-                            match GetCmd::parse(RespValue::Array(arr)) {
+            if arr.iter().all(|v| matches!(v, RespValue::BulkString(_))) =>
+                {
+                    if let RespValue::BulkString(cmd_bytes) = arr.remove(0) {
+                        let cmd = convert_bulk_string_to_string(cmd_bytes);
+                        match cmd.as_str() {
+                            "GET" => match GetCmd::parse(RespValue::Array(arr)) {
                                 Ok(cmd) => Cmd::Get(cmd),
-                                Err(_) => {
-                                    Cmd::Unknown
-                                }
-                            }
-                        }
-                        "SET" => {
-                            match SetCmd::parse(RespValue::Array(arr)) {
+                                Err(_) => Cmd::Unknown,
+                            },
+                            "SET" => match SetCmd::parse(RespValue::Array(arr)) {
                                 Ok(cmd) => Cmd::Set(cmd),
-                                Err(_) => {
-                                    Cmd::Unknown
-                                }
-                            }
-                        }
-                        "DEL" => {
-                            match DelCmd::parse(RespValue::Array(arr)) {
+                                Err(_) => Cmd::Unknown,
+                            },
+                            "DEL" => match DelCmd::parse(RespValue::Array(arr)) {
                                 Ok(cmd) => Cmd::Del(cmd),
-                                Err(_) => {
-                                    Cmd::Unknown
-                                }
-                            }
+                                Err(_) => Cmd::Unknown,
+                            },
+                            "PING" => match PingCmd::parse(RespValue::Array(arr)) {
+                                Ok(_) => Cmd::Ping,
+                                _ => Cmd::Unknown,
+                            },
+                            _ => Cmd::Unknown,
                         }
-                        _ => Cmd::Unknown,
+                    } else {
+                        Cmd::Unknown
                     }
-                } else {
-                    Cmd::Unknown
                 }
-            }
             _ => Cmd::Unknown,
         }
     }
@@ -201,28 +204,22 @@ pub(crate) enum InnerCmd {
     // Key, Value, isNX
     Put(RequestId, Vec<u8>, Vec<u8>, Option<PutOptionSerde>),
     Del(RequestId, Vec<u8>),
+    Ping,
 }
 
 impl Debug for InnerCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InnerCmd::Get(_, key) => {
-                let key = String::from_utf8_lossy(key);
-                write!(f, "GET {:?}", key)
-            },
+            InnerCmd::Get(_, key) => write!(f, "GET {:?}", key),
             InnerCmd::Put(_, key, value, op) => {
-                let key = String::from_utf8_lossy(key);
-                let value = String::from_utf8_lossy(value);
                 if let Some(op) = op {
                     write!(f, "SET {:?} {:?} with option {:?}", key, value, op)
                 } else {
                     write!(f, "SET {:?} {:?}", key, value)
                 }
-            },
-            InnerCmd::Del(_, key) => {
-                let key = String::from_utf8_lossy(key);
-                write!(f, "DEL {:?}", key)
-            },
+            }
+            InnerCmd::Del(_, key) => write!(f, "DEL {:?}", key),
+            InnerCmd::Ping => write!(f, "PING"),
         }
     }
 }
@@ -242,9 +239,7 @@ impl Syncable for InnerCmd {
                 info!("DEL {:?}", key);
                 Ok(())
             }
-            _ => {
-                Ok(())
-            }
+            _ => panic!("Command should not be handled by sync layer"),
         }
     }
 
@@ -253,6 +248,7 @@ impl Syncable for InnerCmd {
             InnerCmd::Get(id, _) => *id,
             InnerCmd::Put(id, _, _, _) => *id,
             InnerCmd::Del(id, _) => *id,
+            InnerCmd::Ping => panic!("Ping command does not have request id"),
         }
     }
 }
@@ -276,6 +272,7 @@ impl InnerCmd {
                 let key = convert_bulk_string_to_vec(cmd.key)?;
                 Ok(Self::Del(id, key))
             }
+            Cmd::Ping => Ok(Self::Ping),
             Cmd::Unknown => Err(anyhow::anyhow!("Unknown command")),
         }
     }
@@ -288,3 +285,4 @@ fn convert_bulk_string_to_vec(bulk_string: RespValue) -> anyhow::Result<Vec<u8>>
         _ => Err(anyhow::anyhow!("Invalid bulk string")),
     }
 }
+

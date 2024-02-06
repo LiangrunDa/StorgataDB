@@ -106,6 +106,9 @@ impl Connection {
             InnerCmd::Put(_, _, _, _) | InnerCmd::Del(_, _) => {
                 self.handle_write(inner_cmd).await?;
             }
+            InnerCmd::Ping => {
+                self.handle_ping().await?;
+            }
         }
         Ok(())
     }
@@ -160,6 +163,13 @@ impl Connection {
                 self.codec.encode(&mut self.writer, &msg).await?;
             }
         }
+        Ok(())
+    }
+
+    /// Send a PONG response to the client
+    pub(crate) async fn handle_ping(&mut self) -> Result<(), ConnectionError> {
+        let msg = RespValue::SimpleString("PONG".to_string());
+        self.codec.encode(&mut self.writer, &msg).await?;
         Ok(())
     }
 }
