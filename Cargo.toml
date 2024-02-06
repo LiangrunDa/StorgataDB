@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bitcask-engine-rs = "0.1.0"
-raft-lite = "0.1.0"
+raft-lite = "0.2.4"
 clap = { version = "4.2.5", features = ["derive", "env"] }
 thiserror = "1.0.40"
 anyhow = "1.0.71"

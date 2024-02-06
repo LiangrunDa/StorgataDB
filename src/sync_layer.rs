@@ -52,8 +52,6 @@ impl SyncLayer {
         &mut self,
         mut sync_request_rx: mpsc::Receiver<SyncRequest<M>>,
     ) {
-        let (mtx, mut mrx) = mpsc::channel::<Vec<u8>>(100);
-        let (btx, brx) = mpsc::channel::<Vec<u8>>(100);
         let raft_config = RaftConfig::new(
             self.args.peer_addr(),
             self.args.self_addr(),
@@ -61,7 +59,7 @@ impl SyncLayer {
             Box::new(AsyncFilePersister::new(self.args.raft_state_file())),
         );
         let mut raft = Raft::new(raft_config);
-        raft.run(brx, mtx);
+        let (btx, mut mrx) = raft.run();
 
         // receive message from lower layer (Raft)
         let request_map = self.request_map.clone();
@@ -93,7 +91,7 @@ impl SyncLayer {
                 let request_id = request.message.get_request_id();
                 let mut request_map = request_map.lock().await;
                 request_map.insert(request_id, request.answer);
-                btx.send(raw_payload).await.unwrap();
+                btx.send(raw_payload).unwrap();
             }
         });
     }
