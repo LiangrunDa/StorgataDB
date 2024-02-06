@@ -128,7 +128,8 @@ impl Connection {
         inner_cmd: InnerCmd,
     ) -> Result<(), ConnectionError> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let sync_request = SyncRequest::new(inner_cmd, tx);
+        let sync_request = SyncRequest::new(inner_cmd.clone(), tx);
+        info!("Sending sync request: {:?}", sync_request);
         self.sync_request_tx
             .send(sync_request)
             .await
@@ -138,7 +139,7 @@ impl Connection {
             Ok(Ok(res)) => {
                 match res {
                     Ok(_) => {
-                        info!("Write operation is committed");
+                        info!("Sync request {:?} is successful", inner_cmd);
                         let msg = RespValue::SimpleString("OK".to_string());
                         self.codec.encode(&mut self.writer, &msg).await?;
                     }

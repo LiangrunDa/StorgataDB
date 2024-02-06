@@ -1,5 +1,4 @@
 use crate::cmd::InnerCmd;
-use crate::logger::init_logger;
 use crate::sync_layer::SyncLayer;
 use tracing::{debug, info};
 
@@ -10,16 +9,11 @@ mod logger;
 mod resp_codec;
 mod server;
 mod sync_layer;
+use anyhow::Result;
 
-fn main() {
+fn main() -> Result<()> {
     let args = cli::parse_args();
-    init_logger(
-        args.log_level(),
-        args.log_dir(),
-        args.log_file(),
-        args.rust_log(),
-    )
-    .expect("Could not initialize logger");
+    let _file_appender_guard = logger::init(args.log_level(), args.rust_log())?;
     info!("Starting with args: {:?}", args);
     debug!("Starting debug");
     let storage = bitcask_engine_rs::bitcask::BitCask::new(args.data_dir()).unwrap();
@@ -33,4 +27,5 @@ fn main() {
         let server_task = server.run();
         tokio::join!(sync_layer_task, server_task)
     });
+    Ok(())
 }

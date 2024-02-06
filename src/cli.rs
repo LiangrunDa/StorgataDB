@@ -24,40 +24,22 @@ pub struct Args {
     #[arg(short = 'd', long, env, default_value = "./data/kv_server/storage")]
     directory: PathBuf,
 
-    /// Relative path to the server's log file.
-    #[arg(
-        short = 'l',
-        long,
-        env,
-        default_value = "./data/kv_server/kv_server.log"
-    )]
-    log_file: PathBuf,
-
     /// Relative path to the server's raft state file.
     #[arg(short = 'r', long, env, default_value = "./data/raft/raft_state")]
     raft_state_file: PathBuf,
 
     /// Set the log level.
-    #[arg(long = "ll", long, env, default_value = "info")]
+    #[arg(long = "ll", long, env, default_value = "debug")]
     log_level: String,
 
     /// Logging filter
-    #[arg(long, env, default_value = "tokio=error,tarpc=error,raft_lite=trace")]
+    #[arg(long, env, default_value = "tokio=error,tarpc=error,raft_lite=info")]
     rust_log: String,
 }
 
 impl Args {
     pub fn log_level(&self) -> String {
         self.log_level.clone()
-    }
-    pub fn log_dir(&self) -> &Path {
-        self.log_file.parent().unwrap_or(Path::new("."))
-    }
-    pub fn log_file(&self) -> &Path {
-        self.log_file
-            .file_name()
-            .map(|f| f.as_ref())
-            .unwrap_or(Path::new("server.log"))
     }
 
     pub fn data_dir(&self) -> &Path {

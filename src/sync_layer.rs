@@ -6,10 +6,12 @@ use raft_lite::raft::Raft;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt::{Debug};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::warn;
 use bitcask_engine_rs::error::BitCaskError;
+use crate::cmd::InnerCmd;
 
 pub(crate) type RequestId = [u8; 16];
 
@@ -21,6 +23,12 @@ pub(crate) trait Syncable: Serialize + DeserializeOwned + Send {
 pub(crate) struct SyncRequest<M: Syncable> {
     pub(crate) message: M,
     pub(crate) answer: oneshot::Sender<Result<(), BitCaskError>>,
+}
+
+impl Debug for SyncRequest<InnerCmd> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.message)
+    }
 }
 
 impl<M: Syncable> SyncRequest<M> {

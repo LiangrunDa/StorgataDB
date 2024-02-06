@@ -206,15 +206,23 @@ pub(crate) enum InnerCmd {
 impl Debug for InnerCmd {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InnerCmd::Get(_, key) => write!(f, "GET {:?}", key),
+            InnerCmd::Get(_, key) => {
+                let key = String::from_utf8_lossy(key);
+                write!(f, "GET {:?}", key)
+            },
             InnerCmd::Put(_, key, value, op) => {
+                let key = String::from_utf8_lossy(key);
+                let value = String::from_utf8_lossy(value);
                 if let Some(op) = op {
                     write!(f, "SET {:?} {:?} with option {:?}", key, value, op)
                 } else {
                     write!(f, "SET {:?} {:?}", key, value)
                 }
             },
-            InnerCmd::Del(_, key) => write!(f, "DEL {:?}", key),
+            InnerCmd::Del(_, key) => {
+                let key = String::from_utf8_lossy(key);
+                write!(f, "DEL {:?}", key)
+            },
         }
     }
 }
