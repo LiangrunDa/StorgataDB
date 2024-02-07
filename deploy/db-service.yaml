@@ -32,12 +32,22 @@ spec:
     matchLabels:
       app: kv-server
   serviceName: "kv-server"
-  replicas: 3
+  replicas: 6
   template:
     metadata:
       labels:
         app: kv-server
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - kv-server
+              topologyKey: "kubernetes.io/hostname"
       containers:
         - name: kv-server
           image: liangrunda/storgatadb
@@ -49,8 +59,10 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: TOTAL_REPLICAS
-              value: "3"
+              value: "6"
             - name: RAFT_PORT
               value: "6624"
             - name: LOG_LEVEL
-              value: "info"
+              value: "debug"
+            - name: RUST_LOG
+              value: "tokio=error,tarpc=error,raft_lite=info"
